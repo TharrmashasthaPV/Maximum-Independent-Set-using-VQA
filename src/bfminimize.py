@@ -1,6 +1,12 @@
 from qiskit import QuantumCircuit
 from qiskit.primitives import StatevectorEstimator
 
+try:
+    from tqdm.notebook import tqdm
+except:
+    def tqdm(iterable, **kwargs):
+        return iterable
+
 class BFMinimizeCombinatorial():
     def __init__(
         self,
@@ -15,7 +21,7 @@ class BFMinimizeCombinatorial():
         self.sorted_cost_list = []
 
     def run(self):
-        for i in range(2**self.num_qubits):
+        for i in tqdm(range(2**self.num_qubits)):
             assignment = bin(i)[2:].zfill(self.num_qubits)
             assignment_circuit = QuantumCircuit(self.num_qubits)
             assignment_circuit.initialize(assignment)

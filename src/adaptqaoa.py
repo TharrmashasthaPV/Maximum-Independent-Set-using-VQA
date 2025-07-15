@@ -2,11 +2,18 @@ from qiskit import QuantumCircuit
 from qiskit.circuit import Parameter
 from qiskit.circuit.library import *
 from qiskit.quantum_info import SparsePauliOp
-from qiskit.primitives import StatevectorEstimator, StatevectorSampler
+from qiskit.primitives import BackendEstimatorV2 as Estimator, StatevectorEstimator
+from qiskit.transpiler import generate_preset_pass_manager
+from qiskit_aer import AerSimulator
 from scipy.optimize import minimize
 import numpy as np
 import itertools
 from .helper_gates import *
+try:
+    from tqdm.notebook import tqdm
+    _TQDM = True
+except:
+    _TQDM = False
 
 class AdaptQAOA():
     """ The Adapt-QAOA class."""
@@ -17,9 +24,9 @@ class AdaptQAOA():
         mixer_pool_type = None,
         reference_circuit = None,
         max_num_layers = 3,
-        estimator = None,
+        backend = None,
         optimizer = None,
-        optimizer_options = None,
+        optimizer_options = {},
         threshold = 1e-5,
         error_threshold = 1e-4
     ):
@@ -32,7 +39,7 @@ class AdaptQAOA():
                 for more information.
             reference_circuit : A QuantumCircuit as the reference circuit to create the reference state.
             max_num_layers :  Maximum number of repetitions of H_m·H_p layer
-            estimator : An Estimator primitive that will be used to estimate the expectation values.
+            backend : A backend that will be used to estimate the expectation values.
             optimizer : The name of the optimizer to be used to minimize the cost function. Default: 'COBYLA'
             optimizer_options : A dictionary of optimizer options.
             threshold : A threshold for the gradient of the mixers. If the gradient of any mixer is below the threshold,
@@ -97,7 +104,11 @@ class AdaptQAOA():
             raise TypeError("The provided reference circuit is not of QuantumCircuit type.")
         self.reference_circuit = reference_circuit
         self.max_num_layers = max_num_layers
-        self.estimator = estimator
+        self.backend = backend
+        if self.backend is not None:
+            self.estimator = Estimator(backend = self.backend)
+        else:
+            self.estimator = None
         self.optimizer = optimizer
         self.optimizer_options = optimizer_options
         self.threshold = threshold
@@ -291,6 +302,17 @@ class AdaptQAOA():
 
         return ansatz
 
+    def tqdm_callback(self, maxiter):
+        if _TQDM:
+            progress_bar = tqdm(total=maxiter, desc="Progress")
+        else:
+            progress_bar = None
+        def update_progress(intermediate_parameters):
+            if _TQDM:
+                progress_bar.update(1)
+
+        return update_progress, progress_bar
+    
     def cost_function(self, params, ansatz, hamiltonian, estimator=None):
         """
         A method to compute the expectation value of a Hamiltonian with respect to
@@ -315,29 +337,38 @@ class AdaptQAOA():
         """
         The method that performs the Adapt-QAOA optimization.
         """
-        if self.estimator is None:
-            print("The estimator is not provided. Using StatevectorEstimator for estimation.")
+        if self.backend is None:
+            print("The backend is not provided. Using StatevectorEstimator for estimation.")
             self.estimator = StatevectorEstimator()
         if self.optimizer is None:
             print("The optimizer is set to COBYLA since optimizer is not provided.")
             self.optimizer = 'COBYLA'
-        
+
         prev_parameters = []
         current_ansatz = None
         step = 0
         prev_cost = np.inf
         
+        maxiter = 1001
+        if 'maxiter' in self.optimizer_options:
+            maxiter = self.optimizer_options['maxiter']
+        update_progress_callback, progress_bar = self.tqdm_callback(self.max_num_layers*maxiter)
         while step < self.max_num_layers:
             step_ansatz = self.prepare_ansatz(step)
             ansatz_parameters = prev_parameters + [0.01]
             mixer_gradient = []
             for mixer in self.mixer_pool:
                 observable = -1j*self._operator_commutator(self.problem_hamiltonian, mixer)
-                gradient = self.cost_function(ansatz_parameters, step_ansatz, observable, self.estimator)
+                if sum(observable.coeffs) == 0:
+                    gradient = [0]
+                else:
+                    gradient = self.cost_function(ansatz_parameters, step_ansatz, observable, self.estimator)
                 mixer_gradient.append(gradient)
             gradient_abs = np.linalg.norm(mixer_gradient)
             if gradient_abs <= self.threshold:
-                print("A solution is reached.")
+                print("The gradient is below the set threshold. The algorithm has converged.")
+                if _TQDM:
+                    progress_bar.close()
                 return
             optimal_mixer = self.mixer_pool[mixer_gradient.index(max(mixer_gradient))]
             self.optimal_mixer_list.append(optimal_mixer)
@@ -353,7 +384,8 @@ class AdaptQAOA():
                 mixer_params_init,
                 args = (step_ansatz, self.problem_hamiltonian, self.estimator),
                 method = self.optimizer,
-                options = self.optimizer_options
+                options = self.optimizer_options,
+                callback = update_progress_callback
             )
 
             self.cost_list.append(step_result.fun)
@@ -364,4 +396,10 @@ class AdaptQAOA():
                 self.optimal_ansatz = step_ansatz.copy()
             step = step + 1
             if step > 1 and np.abs(self.cost_list[-1]-self.cost_list[-2]) < self.error_threshold:
+                print("The difference in the cost of two consecutive iterations is less than the error threshold. The algorithm has converged.")
+                if _TQDM:
+                    progress_bar.close()
                 return
+            progress_bar.update((step * maxiter) - progress_bar.n)
+        if _TQDM:
+            progress_bar.close()
