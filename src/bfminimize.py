@@ -1,16 +1,11 @@
 from qiskit import QuantumCircuit
 from qiskit.primitives import StatevectorEstimator
 
-try:
-    from tqdm.notebook import tqdm
-except:
-    def tqdm(iterable, **kwargs):
-        return iterable
-
 class BFMinimizeCombinatorial():
     def __init__(
         self,
-        problem_hamiltonian
+        problem_hamiltonian,
+        verbose = False
     ):
         self.problem_hamiltonian = problem_hamiltonian
         self.num_qubits = problem_hamiltonian.num_qubits
@@ -20,8 +15,18 @@ class BFMinimizeCombinatorial():
         self.cost_dict = {}
         self.sorted_cost_list = []
 
+        def tqdm(iterable, **kwargs):
+            return iterable
+        self.tqdm = tqdm
+        if verbose == True:
+            try:
+                from tqdm.notebook import tqdm
+                self.tqdm = tqdm
+            except:
+                pass
+
     def run(self):
-        for i in tqdm(range(2**self.num_qubits)):
+        for i in self.tqdm(range(2**self.num_qubits)):
             assignment = bin(i)[2:].zfill(self.num_qubits)
             assignment_circuit = QuantumCircuit(self.num_qubits)
             assignment_circuit.initialize(assignment)

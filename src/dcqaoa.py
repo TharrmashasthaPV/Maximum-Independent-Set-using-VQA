@@ -5,17 +5,11 @@ from qiskit.quantum_info import SparsePauliOp
 from qiskit.primitives import StatevectorEstimator, BackendEstimatorV2 as Estimator
 from qiskit.transpiler import generate_preset_pass_manager
 from qiskit_aer import AerSimulator
-from scipy.optimize import minimize
+from scipy.optimize import minimize, basinhopping, differential_evolution
 import numpy as np
 import itertools
+import warnings
 from src.helper_gates import *
-try:
-    from tqdm.notebook import tqdm
-    _TQDM = True
-except:
-    _TQDM = False
-    def tqdm(iterable, **kwargs):
-        return iterable
 
 
 class DCQAOA():
@@ -30,8 +24,9 @@ class DCQAOA():
         ansatz = None,
         num_layers = 1,
         optimizer = 'COBYLA',
-        optimizer_options = {},
+        optimizer_options = {'maxiter' : 1000},
         backend = None,
+        verbose = False
     ):
         """
         Args:
@@ -84,6 +79,18 @@ class DCQAOA():
         self.optimal_parameters = []
         self.intermediate_parameters_list = []
         self.intermediate_costs_list = None
+        
+        def tqdm(iterable, **kwargs):
+            return iterable
+        self._TQDM = False
+        self.tqdm = tqdm
+        if verbose == True:
+            try:
+                from tqdm.notebook import tqdm
+                self.tqdm = tqdm
+                self._TQDM = True
+            except:
+                pass
 
     def set_problem_hamiltonian(self, problem_hamiltonian):
         """
@@ -257,7 +264,7 @@ class DCQAOA():
             )
         num_qubits = self.num_qubits
         if self.mixer_hamiltonian is None:
-            print("Mixer Hamiltonian is not provided. Using sum_i X_i as the mixer Hamiltonian.")
+            warnings.warn("Mixer Hamiltonian is not provided. Using sum_i X_i as the mixer Hamiltonian.")
             mixer_terms = []
             for i in range(num_qubits):
                 term = ['X' if j==i else 'I' for j in range(num_qubits)]
@@ -320,12 +327,12 @@ class DCQAOA():
         return ansatz
 
     def tqdm_callback(self, maxiter):
-        if _TQDM:
-            progress_bar = tqdm(total=maxiter, desc="Progress")
+        if self._TQDM:
+            progress_bar = self.tqdm(total=maxiter, desc="Progress")
         else:
             progress_bar = None
-        def save_intermediate_parameters(intermediate_parameters):
-            if _TQDM:
+        def save_intermediate_parameters(intermediate_parameters, *args):
+            if self._TQDM:
                 progress_bar.update(1)
             self.intermediate_parameters_list.append(intermediate_parameters)
 
@@ -348,35 +355,77 @@ class DCQAOA():
         """
         cost = estimator.run([(ansatz, hamiltonian, [params])]).result()[0].data.evs
         return cost
+
+    def optimize(self, cost_function, init_params, cost_fn_args, callback):
+        """
+        The classical optimizer function for the class. This function sets the optimizer to one of the
+        COBYLA, Powell, L-BFGS-B, basinhopping and differential evolution.
+        
+        Args:
+            cost_function : The cost function to be optimized.
+            init_params : The initial parameters for the optimizer.
+            cost_fn_args : A tuple containing the args for the cost function.
+
+        Returns:
+            result : The optimzer result.
+        """
+        if self.optimizer == 'basinhopping':
+            result = basinhopping(
+                cost_function, 
+                init_params, 
+                minimizer_kwargs = {'args': cost_fn_args}, 
+                callback = callback
+            )
+        elif self.optimizer == 'differential_evolution':
+            bounds = [(0, 2*np.pi) for _ in range(cost_fn_args[0].num_parameters)]
+            if 'maxiter' in self.optimizer_options:
+                maxiter = self.optimizer_options['maxiter']
+            result = differential_evolution(
+                func = cost_function, 
+                bounds = bounds, 
+                args = cost_fn_args,
+                maxiter = maxiter,
+                callback = callback
+            )
+        elif self.optimizer in ['COBYLA', 'Nelder-Mead', 'L-BFGS-B']:
+            result = minimize(
+                cost_function, 
+                init_params, 
+                args = cost_fn_args, 
+                method = self.optimizer, 
+                options = self.optimizer_options, 
+                callback = callback
+            )
+        else:
+            raise Exception(f"The provided optimizer ({self.optimizer}) is not available currently.")
+        return result
     
     def run(self, estimator = None):
         """
         The method that performs the CD-QAOA optimization.
         """
         if self.estimator is None and self.backend is None:
-            print("Backend is not provided. Setting AerSimulator as the backend.")
+            warnings.warn("Backend is not provided. Setting estimator as StatevectorEstimator.")
             self.backend = AerSimulator()
             self.estimator = Estimator(backend = self.backend)
         if self.ansatz is None:
             self.ansatz = self.prepare_ansatz()
         self.estimator = StatevectorEstimator()
         # Optimizing the circuit
-        # pass_manager = generate_preset_pass_manager(backend=self.backend, optimization_level=0)
-        # self.ansatz = pass_manager.run(self.ansatz)
+        pass_manager = generate_preset_pass_manager(backend=self.backend, optimization_level=0)
+        self.ansatz = pass_manager.run(self.ansatz)
         init_params = 2 * np.pi * np.random.rand(self.ansatz.num_parameters)
         maxiter = 1001
         if 'maxiter' in self.optimizer_options:
             maxiter = self.optimizer_options['maxiter']
         save_inter_parameters_callback, progress_bar = self.tqdm_callback(maxiter)
-        optimizer_result = minimize(
+        optimizer_result = self.optimize(
             self.cost_function,
             init_params,
-            args = (self.ansatz, self.problem_hamiltonian, self.estimator),
-            method = self.optimizer,
-            options = self.optimizer_options,
+            (self.ansatz, self.problem_hamiltonian, self.estimator),
             callback = save_inter_parameters_callback
         )
-        if _TQDM:
+        if self._TQDM:
             progress_bar.update(maxiter - progress_bar.n)
             progress_bar.close()
         self.optimal_value = optimizer_result.fun
@@ -387,6 +436,6 @@ class DCQAOA():
             raise Exception("Please use .run() method to run the optimization before calling intermediate_costs() method.")
         if self.intermediate_costs_list is None:
             self.intermediate_costs_list = [
-                self.cost_function(params, self.ansatz, self.problem_hamiltonian, self.estimator) for params in tqdm(self.intermediate_parameters_list, desc="Computing Costs")
+                self.cost_function(params, self.ansatz, self.problem_hamiltonian, self.estimator) for params in self.tqdm(self.intermediate_parameters_list, desc="Computing Costs")
             ]
         return self.intermediate_costs_list
