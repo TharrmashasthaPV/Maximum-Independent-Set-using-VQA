@@ -104,7 +104,7 @@ class VQE():
             progress_bar = self.tqdm(total=maxiter, desc="Progress")
         else:
             progress_bar = None
-        def save_intermediate_parameters(intermediate_parameters, ):
+        def save_intermediate_parameters(intermediate_parameters, *args):
             if self._TQDM:
                 progress_bar.update(1)
             self.intermediate_parameters_list.append(intermediate_parameters)
