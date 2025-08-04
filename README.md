@@ -23,6 +23,9 @@ In the current state, this repository contains the source code for functions tha
 
 #### Notebooks:
 
-1. __solving-mis-using-vqa.ipynb__: This notebook demonstrates how to use the custom `VQE`, `QAOA`, `AdaptQAOA`, and `DCQAOA` classes to solve the MIS problem for some arbitrarily generated graph instance.
-2. __Dependence of Ansatz Depth - Comparing across Max-Repetitions.ipynb__: The notebook contains a comparison between the performance of the variational algorithms for fixed max-repetitions.
-3. __Dependence on Classical Optimizers.ipynb__: The notebook compares the classical optimizers and investigates how each variational algorithm performs with different classical optimizers.
+1. __1. Solving MIS using VQA.ipynb__: This notebook demonstrates how to use the custom `VQE`, `QAOA`, `AdaptQAOA`, and `DCQAOA` classes to solve the MIS problem for some arbitrarily generated graph instance.
+2. __2.a. Comparing across Max-Repetitions.ipynb__: The notebook contains a comparison between the performance of the variational algorithms for fixed max-repetitions.
+3. __2.b. Comparing across Fixed Depth.ipynb__: The notebook contains a comparison between the performance of the variational algorithms for fixed depths.
+4.  __2.c. Comparing across Number of Parameters.ipynb__: Here, we study how the algorithms perform when all the algorithms have the same number of parameters.
+5. __3. Dependence on Classical Optimizers.ipynb__: This notebook compares the classical optimizers and investigates how each variational algorithm performs with different classical optimizers.
+6. __4. Comparison between various DCQAOA settings.ipynb__: In here, we study how different CD Hamiltonians affect the performance of DCQAOA when solving the MIS problem.
