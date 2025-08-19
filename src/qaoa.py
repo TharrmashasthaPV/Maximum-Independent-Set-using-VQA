@@ -148,7 +148,9 @@ class QAOA():
             'ZZ': RZZGate(gate_param),
             
         }
-        if len(op_list) == 1:
+        if len(op_list) == 0:
+            pass
+        elif len(op_list) == 1:
             op = op_list[0][0]
             qubits = [op_list[0][1]]
             gate = op_gate_map[op]

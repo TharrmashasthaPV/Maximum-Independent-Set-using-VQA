@@ -38,6 +38,7 @@ class VQE():
         self.ansatz = ansatz
         self.reference_circuit = reference_circuit
         self.backend = backend
+        self.estimator = Estimator(backend = backend)
         self.optimizer = optimizer
         self.optimizer_options = optimizer_options
 
@@ -198,6 +199,7 @@ class VQE():
             self.ansatz = self.reference_circuit.compose(self.ansatz, inplace = False)
         pm = generate_preset_pass_manager(backend = self.backend, optimization_level = 3)
         self.ansatz = pm.run(self.ansatz)
+        problem_hamiltonian = self.problem_hamiltonian.apply_layout(layout = self.ansatz.layout)
         init_params = 2 * np.pi * np.random.rand(self.ansatz.num_parameters)
         maxiter = 1001
         if 'maxiter' in self.optimizer_options:
@@ -206,7 +208,7 @@ class VQE():
         optimizer_result = self.optimize(
             self.cost_function,
             init_params,
-            (self.ansatz, self.problem_hamiltonian, self.estimator),
+            (self.ansatz, problem_hamiltonian, self.estimator),
             callback = save_inter_parameters_callback
         )
         if self._TQDM:
