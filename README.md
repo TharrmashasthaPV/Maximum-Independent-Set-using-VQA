@@ -29,4 +29,5 @@ In the current state, this repository contains the source code for functions tha
 4.  __2.c. Comparing across Number of Parameters.ipynb__: Here, we study how the algorithms perform when all the algorithms have the same number of parameters.
 5. __3. Dependence on Classical Optimizers.ipynb__: This notebook compares the classical optimizers and investigates how each variational algorithm performs with different classical optimizers.
 6. __4. Comparison between various DCQAOA settings.ipynb__: In here, we study how different CD Hamiltonians affect the performance of DCQAOA when solving the MIS problem.
-7. __Performance of VQAs under Noise.ipynb__: In this notebook, we investigate the performance of the variational algorithms in the presence of noise.
+7. __Performance of VQAs under Noise.ipynb__: In this notebook, we investigate the performance of the variational algorithms under the effects of backend noise.
+8. __Solving Maximum Independent Set using QAOA and ZNE.ipynb__: Here, we study the extent to which the Zero Noise Extrapolation (ZNE) error mitigation technique helps mitigate error when solving MIS using QAOA.
