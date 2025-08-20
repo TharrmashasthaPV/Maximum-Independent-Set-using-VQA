@@ -26,6 +26,7 @@ class DCQAOA():
         optimizer = 'COBYLA',
         optimizer_options = {'maxiter' : 1000},
         backend = None,
+        transpiler_optimization_level = 3,
         verbose = False
     ):
         """
@@ -74,6 +75,7 @@ class DCQAOA():
             self.estimator = Estimator(backend = self.backend)
         else:
             self.estimator = None
+        self.transpiler_optimization_level = transpiler_optimization_level
 
         self.optimal_value = np.inf
         self.optimal_parameters = []
@@ -412,8 +414,9 @@ class DCQAOA():
             self.ansatz = self.prepare_ansatz()
         self.estimator = StatevectorEstimator()
         # Optimizing the circuit
-        pass_manager = generate_preset_pass_manager(backend=self.backend, optimization_level=0)
-        self.ansatz = pass_manager.run(self.ansatz)
+        pass_manager = generate_preset_pass_manager(backend=self.backend, optimization_level = self.transpiler_optimization_level)
+        transpiled_ansatz = pass_manager.run(self.ansatz)
+        problem_hamiltonian = self.problem_hamiltonian.apply_layout(layout = transpiled_ansatz.layout)
         init_params = 2 * np.pi * np.random.rand(self.ansatz.num_parameters)
         maxiter = 1001
         if 'maxiter' in self.optimizer_options:
@@ -422,7 +425,7 @@ class DCQAOA():
         optimizer_result = self.optimize(
             self.cost_function,
             init_params,
-            (self.ansatz, self.problem_hamiltonian, self.estimator),
+            (transpiled_ansatz, problem_hamiltonian, self.estimator),
             callback = save_inter_parameters_callback
         )
         if self._TQDM:

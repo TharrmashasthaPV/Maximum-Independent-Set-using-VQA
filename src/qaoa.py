@@ -24,6 +24,7 @@ class QAOA():
         backend = None,
         optimizer = 'COBYLA',
         optimizer_options = {'maxiter' : 1000},
+        transpiler_optimization_level = 3,
         verbose = False
     ):
         """
@@ -57,6 +58,7 @@ class QAOA():
             self.estimator = Estimator(backend = self.backend)
         else:
             self.backend = None
+        self.transpiler_optimization_level = transpiler_optimization_level
 
         self.optimal_value = np.inf
         self.optimal_parameters = []
@@ -302,7 +304,9 @@ class QAOA():
             self.estimator = StatevectorEstimator()
         if self.ansatz is None:
             self.ansatz = self.prepare_ansatz()
-        pm = generate_preset_pass_manager(backend = self.backend, optimization_level=3)
+        pm = generate_preset_pass_manager(backend = self.backend, optimization_level = self.transpiler_optimization_level)
+        transpiled_ansatz = pm.run(self.ansatz)
+        problem_hamiltonian = self.problem_hamiltonian.apply_layout(layout = transpiled_ansatz.layout)
         init_params = 2 * np.pi * np.random.rand(self.ansatz.num_parameters)
         maxiter = 1001
         if 'maxiter' in self.optimizer_options:
@@ -311,7 +315,7 @@ class QAOA():
         optimizer_result = self.optimize(
             self.cost_function,
             init_params,
-            (self.ansatz, self.problem_hamiltonian, self.estimator),
+            (transpiled_ansatz, problem_hamiltonian, self.estimator),
             callback = save_inter_parameters_callback
         )
         if self._TQDM:

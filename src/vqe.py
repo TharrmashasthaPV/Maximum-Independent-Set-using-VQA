@@ -22,7 +22,8 @@ class VQE():
         backend = None,
         optimizer = 'COBYLA',
         optimizer_options = {'maxiter' : 1000},
-        verbose = False
+        transpiler_optimization_level = 3,
+        verbose = False,
     ):
         """
         Args:
@@ -38,9 +39,13 @@ class VQE():
         self.ansatz = ansatz
         self.reference_circuit = reference_circuit
         self.backend = backend
-        self.estimator = Estimator(backend = backend)
+        if backend is not None:
+            self.estimator = Estimator(backend = self.backend)
+        else:
+            self.estimator = None
         self.optimizer = optimizer
         self.optimizer_options = optimizer_options
+        self.transpiler_optimization_level = transpiler_optimization_level
 
         self.optimal_value = np.inf
         self.optimal_parameters = []
@@ -197,9 +202,9 @@ class VQE():
             )
         if self.reference_circuit is not None:
             self.ansatz = self.reference_circuit.compose(self.ansatz, inplace = False)
-        pm = generate_preset_pass_manager(backend = self.backend, optimization_level = 3)
-        self.ansatz = pm.run(self.ansatz)
-        problem_hamiltonian = self.problem_hamiltonian.apply_layout(layout = self.ansatz.layout)
+        pm = generate_preset_pass_manager(backend = self.backend, optimization_level = self.transpiler_optimization_level)
+        transpiled_ansatz = pm.run(self.ansatz)
+        problem_hamiltonian = self.problem_hamiltonian.apply_layout(layout = transpiled_ansatz.layout)
         init_params = 2 * np.pi * np.random.rand(self.ansatz.num_parameters)
         maxiter = 1001
         if 'maxiter' in self.optimizer_options:
@@ -208,7 +213,7 @@ class VQE():
         optimizer_result = self.optimize(
             self.cost_function,
             init_params,
-            (self.ansatz, problem_hamiltonian, self.estimator),
+            (transpiled_ansatz, problem_hamiltonian, self.estimator),
             callback = save_inter_parameters_callback
         )
         if self._TQDM:

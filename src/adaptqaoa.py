@@ -24,6 +24,7 @@ class AdaptQAOA():
         backend = None,
         optimizer = None,
         optimizer_options = {'maxiter' : 1000},
+        transpiler_optimization_level = 3,
         threshold = 1e-5,
         error_threshold = 1e-4,
         verbose = False
@@ -109,6 +110,7 @@ class AdaptQAOA():
             self.estimator = None
         self.optimizer = optimizer
         self.optimizer_options = optimizer_options
+        self.transpiler_optimization_level = transpiler_optimization_level
         self.threshold = threshold
         self.error_threshold = error_threshold
 
@@ -407,9 +409,10 @@ class AdaptQAOA():
         if 'maxiter' in self.optimizer_options:
             maxiter = self.optimizer_options['maxiter']
         update_progress_callback, progress_bar = self.tqdm_callback(self.max_num_layers*maxiter)
-        pm = generate_preset_pass_manager(backend = self.backend, optimization_level=3)
+        pm = generate_preset_pass_manager(backend = self.backend, optimization_level = self.transpiler_optimization_level)
         while step < self.max_num_layers:
             step_ansatz = self.prepare_ansatz(step)
+            transpiled_step_ansatz = pm.run(step_ansatz)
             ansatz_parameters = prev_parameters + [0.01]
             mixer_gradient = []
             for mixer in self.mixer_pool:
@@ -417,7 +420,8 @@ class AdaptQAOA():
                 if sum(observable.coeffs) == 0:
                     gradient = [0]
                 else:
-                    gradient = self.cost_function(ansatz_parameters, step_ansatz, observable, self.estimator)
+                    observable = observable.apply_layout(layout = transpiled_step_ansatz.layout)
+                    gradient = self.cost_function(ansatz_parameters,  transpiled_step_ansatz, observable, self.estimator)
                 mixer_gradient.append(gradient)
             gradient_abs = np.linalg.norm(mixer_gradient)
             if gradient_abs <= self.threshold:
@@ -431,14 +435,14 @@ class AdaptQAOA():
                 self.hamiltonian_to_circuit(optimal_mixer, time = Parameter('beta_'+str(step))),
                 range(self.num_qubits)
             )
-            step_ansatz = pm.run(step_ansatz)
-            
             mixer_params_init = prev_parameters[:len(prev_parameters)//2] + ['0.0'] + prev_parameters[len(prev_parameters)//2:] + ['0.01']
 
+            transpiled_step_ansatz = pm.run(step_ansatz)
+            problem_hamiltonian = self.problem_hamiltonian.apply_layout(layout = transpiled_step_ansatz.layout)
             step_result = self.optimize(
                 self.cost_function,
                 mixer_params_init,
-                (step_ansatz, self.problem_hamiltonian, self.estimator),
+                (transpiled_step_ansatz, problem_hamiltonian, self.estimator),
                 callback = update_progress_callback
             )
 
